@@ -1,6 +1,7 @@
 # ClawMgt Backend Design
 
 Date: 2026-06-03
+Last updated: 2026-06-04
 
 ## Goal
 
@@ -12,7 +13,9 @@ The backend manages cloud-to-edge Claw communication. It must support existing c
 
 Use a unified task model with type-specific strategies.
 
-The cloud service stores one parent task for each user-created operation and one child task item for each target Claw node. A task strategy validates the request, normalizes payload data, decides routing and concurrency rules, and builds the payload returned to edge Claw nodes.
+Tasks are created for a channel. A channel owns registered edge Claw nodes, and edge Claw nodes register and pull tasks by `channelId`. Heartbeat and data report APIs use `nodeId` because those calls describe the state of one concrete node.
+
+The cloud service stores one parent task for each channel-level operation and one child task item for each target Claw node. A task strategy validates the request, normalizes payload data, decides routing and concurrency rules, builds node-specific payloads, and writes task-item details that can be expanded in the management UI.
 
 This keeps the common lifecycle in one place while allowing each task type to own its own business rules.
 
@@ -32,6 +35,21 @@ Requests must use typed DTOs. Controllers must not accept one catch-all `JSONObj
 - Maven project layout
 
 ## Domain Model
+
+### Channel
+
+Represents a cloud-to-edge communication channel.
+
+Important fields:
+
+- `id`
+- `name`
+- `description`
+- `status`
+- `createdAt`
+- `updatedAt`
+
+All task creation and edge task pulling are scoped by channel.
 
 ### Node
 
@@ -53,19 +71,23 @@ Important fields:
 
 ### Task
 
-Represents a parent operation created from the management side.
+Represents a parent channel-level operation created from the management side.
 
 Important fields:
 
 - `id`
+- `channelId`
 - `type`
 - `category`
 - `status`
 - `title`
-- `payload`
+- `payloadType`
+- `payloadSchemaVersion`
+- `requestPayload`
 - `totalItems`
 - `pendingItems`
 - `runningItems`
+- `partialItems`
 - `succeededItems`
 - `failedItems`
 - `cancelledItems`
@@ -86,11 +108,15 @@ Important fields:
 
 - `id`
 - `taskId`
+- `channelId`
 - `nodeId`
 - `type`
 - `category`
 - `status`
-- `payload`
+- `payloadType`
+- `payloadSchemaVersion`
+- `dispatchPayload`
+- `detailPayload`
 - `result`
 - `errorMessage`
 - `pulledAt`
@@ -100,6 +126,27 @@ Important fields:
 - `updatedAt`
 
 Parent tasks aggregate their status from child task items.
+
+### TaskItemDetail
+
+Represents expandable, task-type-specific detail under a child task item.
+
+Important fields:
+
+- `id`
+- `taskItemId`
+- `detailType`
+- `detailKey`
+- `status`
+- `payload`
+- `result`
+- `errorMessage`
+- `createdAt`
+- `updatedAt`
+
+For Skill dispatch, one task item can have multiple detail rows, one per Skill. If a Skill is rejected because the requested version is lower than the node-reported version, the detail row is stored with status `REJECTED` and an explanatory `errorMessage`, while other Skill detail rows can still proceed.
+
+For future task types, strategies decide whether detail rows represent packages, runtime components, model files, role definition changes, or another domain-specific unit.
 
 ### TaskEvent
 
@@ -116,6 +163,41 @@ Important fields:
 - `content`
 - `rawEvent`
 - `createdAt`
+
+### Session
+
+Represents a chat session under one channel.
+
+Important fields:
+
+- `id`
+- `channelId`
+- `nodeId`
+- `title`
+- `status`
+- `createdAt`
+- `updatedAt`
+- `completedAt`
+
+`nodeId` can be filled when the chat task is assigned to or pulled by a concrete node. This keeps the session channel-scoped while still allowing node-specific execution tracking.
+
+### Message
+
+Represents a chat message under a session.
+
+Important fields:
+
+- `id`
+- `sessionId`
+- `taskId`
+- `taskItemId`
+- `source`
+- `role`
+- `content`
+- `rawPayload`
+- `createdAt`
+
+User messages are stored when a chat task is created. Assistant, tool, and system messages can be stored from task events or finish callbacks.
 
 ### NodeSkillMetadata
 
@@ -148,6 +230,219 @@ Important fields:
 - `createdAt`
 
 Report-specific tables, such as `node_skill_metadata`, are updated by report strategies.
+
+## Payload Storage
+
+Payload data is stored deliberately at multiple levels:
+
+- `tasks.request_payload`: the original typed request payload serialized as JSON. This preserves the user-created intent for audit, retry, and display.
+- `task_items.dispatch_payload`: the node-specific executable payload returned by the pull API. Strategies can remove irrelevant data or add node-specific fields.
+- `task_items.detail_payload`: an optional compact JSON summary for child-row display.
+- `task_item_details.payload`: repeated detail units for expandable views, such as each Skill in a multi-Skill dispatch.
+- `task_events.raw_event`: raw event data pushed from edge Claw.
+- `messages.raw_payload`: raw chat message data.
+
+The API layer still uses strongly typed DTOs. JSON persistence is used for durable, versioned domain payloads after validation and strategy normalization, not as a replacement for typed request objects.
+
+Payload records should include a `payload_type` and `payload_schema_version` on `tasks` and `task_items`. This gives future migrations a clear hook when payload classes change.
+
+## Physical Table Design
+
+Use Flyway to create these initial tables.
+
+### `channels`
+
+- `id BIGINT PRIMARY KEY`
+- `name VARCHAR(100) NOT NULL`
+- `description VARCHAR(500)`
+- `status VARCHAR(30) NOT NULL`
+- `created_at TIMESTAMP NOT NULL`
+- `updated_at TIMESTAMP NOT NULL`
+
+### `nodes`
+
+- `id BIGINT PRIMARY KEY`
+- `channel_id BIGINT NOT NULL`
+- `node_key VARCHAR(100) NOT NULL`
+- `hostname VARCHAR(255)`
+- `ip_address VARCHAR(64)`
+- `claw_version VARCHAR(50)`
+- `status VARCHAR(30) NOT NULL`
+- `metadata TEXT`
+- `last_heartbeat_at TIMESTAMP`
+- `created_at TIMESTAMP NOT NULL`
+- `updated_at TIMESTAMP NOT NULL`
+
+Indexes:
+
+- `(channel_id, node_key)` unique
+- `(channel_id, status)`
+
+### `tasks`
+
+- `id BIGINT PRIMARY KEY`
+- `channel_id BIGINT NOT NULL`
+- `type VARCHAR(50) NOT NULL`
+- `category VARCHAR(30) NOT NULL`
+- `status VARCHAR(30) NOT NULL`
+- `title VARCHAR(200) NOT NULL`
+- `payload_type VARCHAR(100) NOT NULL`
+- `payload_schema_version INT NOT NULL`
+- `request_payload TEXT NOT NULL`
+- `total_items INT NOT NULL`
+- `pending_items INT NOT NULL`
+- `running_items INT NOT NULL`
+- `partial_items INT NOT NULL`
+- `succeeded_items INT NOT NULL`
+- `failed_items INT NOT NULL`
+- `cancelled_items INT NOT NULL`
+- `created_at TIMESTAMP NOT NULL`
+- `updated_at TIMESTAMP NOT NULL`
+- `completed_at TIMESTAMP`
+
+Indexes:
+
+- `(channel_id, status)`
+- `(channel_id, type, created_at)`
+
+`request_payload` stores the validated and normalized parent payload. For a Skill install task, it stores the full typed list of Skills selected by the user.
+
+### `task_items`
+
+- `id BIGINT PRIMARY KEY`
+- `task_id BIGINT NOT NULL`
+- `channel_id BIGINT NOT NULL`
+- `node_id BIGINT NOT NULL`
+- `type VARCHAR(50) NOT NULL`
+- `category VARCHAR(30) NOT NULL`
+- `status VARCHAR(30) NOT NULL`
+- `payload_type VARCHAR(100) NOT NULL`
+- `payload_schema_version INT NOT NULL`
+- `dispatch_payload TEXT NOT NULL`
+- `detail_payload TEXT`
+- `result TEXT`
+- `error_message TEXT`
+- `pulled_at TIMESTAMP`
+- `started_at TIMESTAMP`
+- `completed_at TIMESTAMP`
+- `created_at TIMESTAMP NOT NULL`
+- `updated_at TIMESTAMP NOT NULL`
+
+Indexes:
+
+- `(channel_id, node_id, status)`
+- `(node_id, category, status)`
+- `(task_id, status)`
+
+`dispatch_payload` stores the node-specific payload returned to edge Claw by the pull API. For Skill install, rejected lower-version Skills should already be removed from this payload.
+
+`detail_payload` stores a compact typed summary for child-row display.
+
+### `task_item_details`
+
+- `id BIGINT PRIMARY KEY`
+- `task_item_id BIGINT NOT NULL`
+- `detail_type VARCHAR(50) NOT NULL`
+- `detail_key VARCHAR(200) NOT NULL`
+- `status VARCHAR(30) NOT NULL`
+- `payload TEXT NOT NULL`
+- `result TEXT`
+- `error_message TEXT`
+- `created_at TIMESTAMP NOT NULL`
+- `updated_at TIMESTAMP NOT NULL`
+
+Indexes:
+
+- `(task_item_id, status)`
+- `(detail_type, detail_key)`
+
+For Skill install, `detail_type=skill`, `detail_key=skillName`, and `payload` stores the typed Skill package data for that Skill on that node. Version rejection and execution results are stored per detail row.
+
+### `task_events`
+
+- `id BIGINT PRIMARY KEY`
+- `task_id BIGINT NOT NULL`
+- `task_item_id BIGINT NOT NULL`
+- `event_id VARCHAR(100) NOT NULL`
+- `event_type VARCHAR(100) NOT NULL`
+- `status VARCHAR(30)`
+- `role VARCHAR(50)`
+- `content TEXT`
+- `raw_event TEXT`
+- `created_at TIMESTAMP NOT NULL`
+
+Indexes:
+
+- `(task_item_id, id)`
+- `(task_id, id)`
+- `(event_id)` unique when edge Claw event IDs are globally unique
+
+### `sessions`
+
+- `id BIGINT PRIMARY KEY`
+- `channel_id BIGINT NOT NULL`
+- `node_id BIGINT`
+- `title VARCHAR(200)`
+- `status VARCHAR(30) NOT NULL`
+- `created_at TIMESTAMP NOT NULL`
+- `updated_at TIMESTAMP NOT NULL`
+- `completed_at TIMESTAMP`
+
+Indexes:
+
+- `(channel_id, status, updated_at)`
+- `(node_id, updated_at)`
+
+### `messages`
+
+- `id BIGINT PRIMARY KEY`
+- `session_id BIGINT NOT NULL`
+- `task_id BIGINT`
+- `task_item_id BIGINT`
+- `source VARCHAR(50) NOT NULL`
+- `role VARCHAR(50) NOT NULL`
+- `content TEXT`
+- `raw_payload TEXT`
+- `created_at TIMESTAMP NOT NULL`
+
+Indexes:
+
+- `(session_id, id)`
+- `(task_id)`
+- `(task_item_id)`
+
+### `node_reports`
+
+- `id BIGINT PRIMARY KEY`
+- `node_id BIGINT NOT NULL`
+- `report_type VARCHAR(50) NOT NULL`
+- `payload_type VARCHAR(100) NOT NULL`
+- `payload_schema_version INT NOT NULL`
+- `payload TEXT NOT NULL`
+- `status VARCHAR(30) NOT NULL`
+- `error_message TEXT`
+- `reported_at TIMESTAMP NOT NULL`
+- `created_at TIMESTAMP NOT NULL`
+
+Indexes:
+
+- `(node_id, report_type, reported_at)`
+
+### `node_skill_metadata`
+
+- `id BIGINT PRIMARY KEY`
+- `node_id BIGINT NOT NULL`
+- `skill_name VARCHAR(100) NOT NULL`
+- `version VARCHAR(50) NOT NULL`
+- `parameters TEXT`
+- `reported_at TIMESTAMP NOT NULL`
+- `created_at TIMESTAMP NOT NULL`
+- `updated_at TIMESTAMP NOT NULL`
+
+Indexes:
+
+- `(node_id, skill_name)` unique
+- `(skill_name, version)`
 
 ## Task Types
 
@@ -189,6 +484,7 @@ Each strategy should answer:
 - How should the create request payload be validated?
 - How should the parent payload be normalized?
 - How should each node-specific child payload be built?
+- How should task-item detail rows be built?
 - Can the task be cancelled?
 - Can the task item be deleted?
 - Does the task need version checks before dispatch?
@@ -202,19 +498,68 @@ Task creation uses a typed request envelope:
 ```java
 public class CreateTaskRequest {
     @NotNull
+    @Positive
+    private Long channelId;
+
+    @NotNull
     private TaskType type;
 
     @NotBlank
     @Size(max = 200)
     private String title;
 
-    @NotEmpty
     @Size(max = 1000)
     private List<@NotNull @Positive Long> targetNodeIds;
 
     @Valid
     @NotNull
     private TaskPayload payload;
+}
+```
+
+`targetNodeIds` is optional for task types that support channel-wide dispatch. When omitted, the strategy resolves all eligible nodes under the channel. When present, every node must belong to `channelId`.
+
+Chat task creation uses the same envelope with a chat payload:
+
+```java
+public class ChatTaskPayload implements TaskPayload {
+    @Positive
+    private Long sessionId;
+
+    @NotBlank
+    @Size(max = 4000)
+    private String content;
+
+    @Size(max = 200)
+    private String title;
+}
+```
+
+Skill dispatch supports multiple Skills in one parent task:
+
+```java
+public class SkillInstallPayload implements TaskPayload {
+    @NotEmpty
+    @Size(max = 1000)
+    private List<@Valid SkillPackagePayload> skills;
+
+    private boolean force;
+}
+
+public class SkillPackagePayload {
+    @NotBlank
+    @Size(max = 100)
+    private String skillName;
+
+    @NotBlank
+    @Size(max = 50)
+    private String version;
+
+    @NotNull
+    private URI downloadUrl;
+
+    @Valid
+    private SkillParametersPayload parameters;
 }
 ```
 
@@ -247,6 +592,28 @@ Basic validation rules:
 
 Open-ended business fields are allowed only inside a typed payload where they are part of the domain, such as Skill parameters. They should not replace the typed payload object itself.
 
+## Chat Task Flow
+
+Chat is a first-class task type, not a separate one-off implementation.
+
+Flow:
+
+1. The management side creates or reuses a `session` under a `channel`.
+2. The user message is stored in `messages`.
+3. The chat service creates a parent `task` with `type=chat`, `category=CHAT`, `channel_id=session.channel_id`, and a typed `ChatTaskPayload`.
+4. The chat strategy creates one `task_item`. If a concrete node is already chosen, the item is assigned to that node. Otherwise, the strategy can assign an eligible node under the channel according to the routing rule chosen for the first implementation.
+5. Edge Claw pulls the task by channel, executes the chat through its CloudChannel or equivalent local channel, and pushes stream events into `task_events`.
+6. The backend stores assistant/tool/system content from events into `messages` when appropriate.
+7. On finish, the task item and parent task are completed, and the session's `updated_at` and status are refreshed.
+
+Initial routing rule:
+
+- If `targetNodeIds` contains exactly one node, use that node.
+- If `session.nodeId` is already set, continue routing the session to that node.
+- Otherwise choose the first eligible online node under the channel, set `session.nodeId`, and create the child task item for that node.
+
+This keeps multi-turn chat stable while still keeping task pulling scoped by channel.
+
 ## API Design
 
 ### Management APIs
@@ -257,28 +624,43 @@ Creates a task. Request shape:
 
 ```json
 {
+  "channelId": 10,
   "type": "skill_install",
-  "title": "Install data-export skill",
+  "title": "Install Skills",
   "targetNodeIds": [1, 2, 3],
   "payload": {
-    "skillName": "data-export",
-    "version": "1.2.0",
-    "downloadUrl": "https://example.com/skills/data-export.zip",
-    "parameters": {},
+    "skills": [
+      {
+        "skillName": "data-export",
+        "version": "1.2.0",
+        "downloadUrl": "https://example.com/skills/data-export.zip",
+        "parameters": {}
+      },
+      {
+        "skillName": "report-writer",
+        "version": "2.0.0",
+        "downloadUrl": "https://example.com/skills/report-writer.zip",
+        "parameters": {}
+      }
+    ],
     "force": false
   }
 }
 ```
 
-For multiple target nodes, create one parent task and one child task item per node.
+For multiple target nodes, create one channel-scoped parent task and one child task item per node. For multi-unit payloads such as multi-Skill dispatch, create task-item detail rows under each child task item.
+
+If `targetNodeIds` is omitted, the strategy can create child task items for all eligible online nodes under `channelId`.
 
 `GET /api/tasks`
 
 Lists parent tasks with summary counters.
 
+Supports filtering by `channelId`, `type`, and `status`.
+
 `GET /api/tasks/{taskId}`
 
-Returns parent task detail with child task items.
+Returns parent task detail with child task items and expandable task-item details.
 
 `POST /api/tasks/{taskId}/cancel`
 
@@ -296,11 +678,29 @@ Deletes a parent task only when none of its child items are running.
 
 Deletes a child task only when it is not running.
 
+### Conversation APIs
+
+`POST /api/channels/{channelId}/sessions`
+
+Creates a chat session under the channel.
+
+`GET /api/channels/{channelId}/sessions`
+
+Lists chat sessions under the channel.
+
+`GET /api/sessions/{sessionId}/messages`
+
+Lists stored messages for a session.
+
+`POST /api/sessions/{sessionId}/messages`
+
+Creates a user message and a `chat` task under the session's channel. The chat task follows the same task lifecycle as other tasks and writes task events and assistant messages as edge Claw reports progress.
+
 ### Edge Claw APIs
 
-`POST /api/claw/nodes/register`
+`POST /api/claw/channels/{channelId}/nodes/register`
 
-Registers a node and returns its assigned ID or token data.
+Registers a node under the channel and returns its assigned node ID or token data.
 
 `POST /api/claw/nodes/{nodeId}/heartbeat`
 
@@ -327,12 +727,15 @@ Accepts typed data reports from edge Claw nodes. Request shape:
 
 The report service resolves a `ReportStrategy` by report type. For `skill_metadata`, it upserts `node_skill_metadata`.
 
-`GET /api/claw/nodes/{nodeId}/tasks/pull?timeout=30&limit=10`
+`GET /api/claw/channels/{channelId}/tasks/pull?timeout=30&limit=10`
 
-Long-polls pending task items for this node.
+Long-polls pending task items for the calling node under the channel.
+
+The pull API is channel-scoped. The service must still resolve the concrete node from node authentication, such as a node token issued at registration time or an explicit node identity header. The node identity is needed to enforce per-node concurrency and return child task items assigned to that node, but `nodeId` is not part of the pull path.
 
 Pull behavior:
 
+- The node must belong to the requested channel.
 - Chat tasks can be pulled independently.
 - Lifecycle tasks are returned only if the node has no lifecycle task item currently `PULLED` or `RUNNING`.
 - Pulled task items move from `PENDING` to `PULLED`.
@@ -353,13 +756,24 @@ Task and task item statuses:
 - `PULLED`
 - `RUNNING`
 - `SUCCEEDED`
+- `PARTIAL_SUCCEEDED`
 - `FAILED`
 - `CANCELLED`
 - `DELETED`
 
+Task item detail statuses:
+
+- `PENDING`
+- `RUNNING`
+- `SUCCEEDED`
+- `REJECTED`
+- `FAILED`
+- `CANCELLED`
+
 Parent task aggregation:
 
 - All child items `SUCCEEDED`: parent `SUCCEEDED`
+- Any child item `PARTIAL_SUCCEEDED` and all child items terminal: parent `PARTIAL_SUCCEEDED`
 - Any child item `FAILED` and all child items terminal: parent `FAILED`
 - All child items `CANCELLED`: parent `CANCELLED`
 - Any child item `RUNNING` or `PULLED`: parent `RUNNING`
@@ -368,20 +782,23 @@ Parent task aggregation:
 Terminal statuses:
 
 - `SUCCEEDED`
+- `PARTIAL_SUCCEEDED`
 - `FAILED`
 - `CANCELLED`
 - `DELETED`
 
 ## Version Rules
 
-Skill install and upgrade strategies should compare requested Skill version against node-reported metadata when available.
+Skill install and upgrade strategies should compare each requested Skill version against node-reported metadata when available.
 
 Default rule:
 
 - Higher requested version: allow
 - Same requested version: allow only when `force=true`
-- Lower requested version: reject child task creation or mark child task failed before dispatch
+- Lower requested version: create a task item detail row with status `REJECTED`, store the reason, and omit that Skill from the node's executable dispatch payload
 - Missing node metadata: allow dispatch because the edge node can perform a final local check
+
+If all Skill details for a task item are rejected before dispatch, mark the task item `FAILED` with a clear `errorMessage`. If some Skill details are rejected and some execute successfully, mark the task item `PARTIAL_SUCCEEDED`.
 
 The edge Claw must still enforce version safety locally because node metadata can be stale.
 
@@ -403,6 +820,7 @@ Use business errors for:
 - Unknown report type
 - Missing target nodes
 - Nonexistent node
+- Node does not belong to the task channel
 - Invalid typed payload
 - Unsupported state transition
 - Cancel/delete attempts on running task items
@@ -414,13 +832,20 @@ Store edge execution failures in `TaskItem.result` and `TaskItem.errorMessage`.
 
 Backend tests should cover:
 
-- Creating a multi-node parent task and child task items
+- Creating a channel-scoped multi-node parent task and child task items
+- Rejecting target nodes that do not belong to the task channel
 - Strategy resolution by task type
 - Skill payload validation
+- Skill dispatch with multiple Skills creates task-item detail rows
+- Lower Skill versions are stored as rejected detail rows and omitted from dispatch payload
 - Version comparison rules
 - Pulling lifecycle tasks with per-node concurrency
+- Pulling tasks by channel while resolving the concrete node identity
 - Chat task pull not blocked by lifecycle task
+- Chat session/message creation and chat task creation
+- Chat task events can append assistant messages
 - Task item finish updates parent aggregation
+- Partial detail success updates task item and parent status to `PARTIAL_SUCCEEDED`
 - Cancel/delete state restrictions
 - Heartbeat updates only heartbeat fields
 - Skill metadata report upserts node Skill metadata
@@ -435,12 +860,15 @@ Initial implementation should include:
 - Maven Spring Boot project scaffold
 - Entities, repositories, enums, DTOs
 - Flyway migration
+- Channel, node, task, task item, task item detail, task event, session, message, report, and Skill metadata tables
 - Task strategy interface and registry
 - Report strategy interface and registry
 - Strategies for `chat`, `skill_install`, `skill_upgrade`, `skill_remove`, and `param_update`
 - Generic JSON lifecycle strategy support for future lifecycle task types when payload is accepted as structured JSON
 - Management task APIs
-- Edge Claw register, heartbeat, typed report, pull, event, and finish APIs
+- Conversation APIs
+- Edge Claw channel-scoped register and pull APIs
+- Edge Claw node-scoped heartbeat, typed report, event, and finish APIs
 - Focused service tests
 
 The frontend is explicitly out of scope for this phase.
