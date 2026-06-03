@@ -1,0 +1,176 @@
+create table channels (
+    id bigint primary key,
+    name varchar(100) not null,
+    description varchar(500),
+    status varchar(30) not null,
+    created_at timestamp not null,
+    updated_at timestamp not null
+);
+
+create table nodes (
+    id bigint primary key,
+    channel_id bigint not null,
+    node_key varchar(100) not null,
+    hostname varchar(255),
+    ip_address varchar(64),
+    claw_version varchar(50),
+    status varchar(30) not null,
+    metadata text,
+    last_heartbeat_at timestamp,
+    created_at timestamp not null,
+    updated_at timestamp not null,
+    constraint fk_nodes_channel foreign key (channel_id) references channels (id)
+);
+
+create unique index uk_nodes_channel_node_key on nodes (channel_id, node_key);
+create index idx_nodes_channel_status on nodes (channel_id, status);
+
+create table tasks (
+    id bigint primary key,
+    channel_id bigint not null,
+    type varchar(50) not null,
+    category varchar(30) not null,
+    status varchar(30) not null,
+    title varchar(200) not null,
+    payload_type varchar(100) not null,
+    payload_schema_version int not null,
+    request_payload text not null,
+    created_at timestamp not null,
+    updated_at timestamp not null,
+    completed_at timestamp,
+    constraint fk_tasks_channel foreign key (channel_id) references channels (id)
+);
+
+create index idx_tasks_channel_status on tasks (channel_id, status);
+create index idx_tasks_channel_type_created_at on tasks (channel_id, type, created_at);
+
+create table task_items (
+    id bigint primary key,
+    task_id bigint not null,
+    channel_id bigint not null,
+    node_id bigint not null,
+    type varchar(50) not null,
+    category varchar(30) not null,
+    status varchar(30) not null,
+    payload_type varchar(100) not null,
+    payload_schema_version int not null,
+    dispatch_payload text not null,
+    detail_payload text,
+    result text,
+    error_message text,
+    pulled_at timestamp,
+    started_at timestamp,
+    completed_at timestamp,
+    created_at timestamp not null,
+    updated_at timestamp not null,
+    constraint fk_task_items_task foreign key (task_id) references tasks (id),
+    constraint fk_task_items_channel foreign key (channel_id) references channels (id),
+    constraint fk_task_items_node foreign key (node_id) references nodes (id)
+);
+
+create index idx_task_items_channel_node_status on task_items (channel_id, node_id, status);
+create index idx_task_items_node_type_status on task_items (node_id, type, status);
+create index idx_task_items_node_category_status on task_items (node_id, category, status);
+create index idx_task_items_task_status on task_items (task_id, status);
+
+create table task_item_details (
+    id bigint primary key,
+    task_item_id bigint not null,
+    detail_type varchar(50) not null,
+    detail_key varchar(200) not null,
+    status varchar(30) not null,
+    payload text not null,
+    result text,
+    error_message text,
+    created_at timestamp not null,
+    updated_at timestamp not null,
+    constraint fk_task_item_details_task_item foreign key (task_item_id) references task_items (id)
+);
+
+create index idx_task_item_details_task_item_status on task_item_details (task_item_id, status);
+create index idx_task_item_details_type_key on task_item_details (detail_type, detail_key);
+
+create table task_events (
+    id bigint primary key,
+    task_id bigint not null,
+    task_item_id bigint not null,
+    event_id varchar(100) not null,
+    event_type varchar(100) not null,
+    status varchar(30),
+    role varchar(50),
+    content text,
+    raw_event text,
+    created_at timestamp not null,
+    constraint fk_task_events_task foreign key (task_id) references tasks (id),
+    constraint fk_task_events_task_item foreign key (task_item_id) references task_items (id)
+);
+
+create index idx_task_events_task_item_id on task_events (task_item_id, id);
+create index idx_task_events_task_id on task_events (task_id, id);
+create unique index uk_task_events_event_id on task_events (event_id);
+
+create table sessions (
+    id bigint primary key,
+    channel_id bigint not null,
+    node_id bigint,
+    title varchar(200),
+    status varchar(30) not null,
+    created_at timestamp not null,
+    updated_at timestamp not null,
+    completed_at timestamp,
+    constraint fk_sessions_channel foreign key (channel_id) references channels (id),
+    constraint fk_sessions_node foreign key (node_id) references nodes (id)
+);
+
+create index idx_sessions_channel_status_updated_at on sessions (channel_id, status, updated_at);
+create index idx_sessions_node_updated_at on sessions (node_id, updated_at);
+
+create table messages (
+    id bigint primary key,
+    session_id bigint not null,
+    task_id bigint,
+    task_item_id bigint,
+    source varchar(50) not null,
+    role varchar(50) not null,
+    content text,
+    raw_payload text,
+    created_at timestamp not null,
+    constraint fk_messages_session foreign key (session_id) references sessions (id),
+    constraint fk_messages_task foreign key (task_id) references tasks (id),
+    constraint fk_messages_task_item foreign key (task_item_id) references task_items (id)
+);
+
+create index idx_messages_session_id on messages (session_id, id);
+create index idx_messages_task on messages (task_id);
+create index idx_messages_task_item on messages (task_item_id);
+
+create table node_reports (
+    id bigint primary key,
+    node_id bigint not null,
+    report_type varchar(50) not null,
+    payload_type varchar(100) not null,
+    payload_schema_version int not null,
+    payload text not null,
+    status varchar(30) not null,
+    error_message text,
+    reported_at timestamp not null,
+    created_at timestamp not null,
+    constraint fk_node_reports_node foreign key (node_id) references nodes (id)
+);
+
+create index idx_node_reports_node_type_reported_at on node_reports (node_id, report_type, reported_at);
+
+create table node_skill_metadata (
+    id bigint primary key,
+    node_id bigint not null,
+    skill_name varchar(100) not null,
+    version varchar(50) not null,
+    parameters text,
+    reported_at timestamp not null,
+    created_at timestamp not null,
+    updated_at timestamp not null,
+    constraint fk_node_skill_metadata_node foreign key (node_id) references nodes (id)
+);
+
+create unique index uk_node_skill_metadata_node_skill on node_skill_metadata (node_id, skill_name);
+create index idx_node_skill_metadata_skill_version on node_skill_metadata (skill_name, version);
