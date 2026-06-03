@@ -79,6 +79,8 @@ Important fields:
 - `channelId`
 - `type`
 - `category`
+- `concurrencyGroup`
+- `concurrencyMode`
 - `status`
 - `title`
 - `payloadType`
@@ -95,10 +97,12 @@ Important fields:
 - `updatedAt`
 - `completedAt`
 
-`category` controls concurrency. Initial categories:
+`category` is a high-level classification. Initial categories:
 
 - `CHAT`: normal dialogue tasks
 - `LIFECYCLE`: Skill install, Skill upgrade, parameter updates, runtime install, and similar management operations
+
+Concrete concurrency is controlled by task type configuration, not by `category` alone.
 
 ### TaskItem
 
@@ -112,6 +116,8 @@ Important fields:
 - `nodeId`
 - `type`
 - `category`
+- `concurrencyGroup`
+- `concurrencyMode`
 - `status`
 - `payloadType`
 - `payloadSchemaVersion`
@@ -284,6 +290,8 @@ Indexes:
 - `channel_id BIGINT NOT NULL`
 - `type VARCHAR(50) NOT NULL`
 - `category VARCHAR(30) NOT NULL`
+- `concurrency_group VARCHAR(100) NOT NULL`
+- `concurrency_mode VARCHAR(30) NOT NULL`
 - `status VARCHAR(30) NOT NULL`
 - `title VARCHAR(200) NOT NULL`
 - `payload_type VARCHAR(100) NOT NULL`
@@ -304,6 +312,7 @@ Indexes:
 
 - `(channel_id, status)`
 - `(channel_id, type, created_at)`
+- `(channel_id, concurrency_group, status)`
 
 `request_payload` stores the validated and normalized parent payload. For a Skill install task, it stores the full typed list of Skills selected by the user.
 
@@ -315,6 +324,8 @@ Indexes:
 - `node_id BIGINT NOT NULL`
 - `type VARCHAR(50) NOT NULL`
 - `category VARCHAR(30) NOT NULL`
+- `concurrency_group VARCHAR(100) NOT NULL`
+- `concurrency_mode VARCHAR(30) NOT NULL`
 - `status VARCHAR(30) NOT NULL`
 - `payload_type VARCHAR(100) NOT NULL`
 - `payload_schema_version INT NOT NULL`
@@ -331,7 +342,8 @@ Indexes:
 Indexes:
 
 - `(channel_id, node_id, status)`
-- `(node_id, category, status)`
+- `(node_id, concurrency_group, status)`
+- `(node_id, concurrency_mode, status)`
 - `(task_id, status)`
 
 `dispatch_payload` stores the node-specific payload returned to edge Claw by the pull API. For Skill install, rejected lower-version Skills should already be removed from this payload.
@@ -481,6 +493,7 @@ Each strategy should answer:
 
 - What task type does this strategy handle?
 - Which category does it use?
+- Which default concurrency group and mode does it use?
 - How should the create request payload be validated?
 - How should the parent payload be normalized?
 - How should each node-specific child payload be built?
@@ -737,7 +750,7 @@ Pull behavior:
 
 - The node must belong to the requested channel.
 - Chat tasks can be pulled independently.
-- Lifecycle tasks are returned only if the node has no lifecycle task item currently `PULLED` or `RUNNING`.
+- Lifecycle tasks are returned only when the candidate task type's resolved concurrency configuration allows it to run with the node's current `PULLED` or `RUNNING` task items.
 - Pulled task items move from `PENDING` to `PULLED`.
 
 `POST /api/claw/task-items/{taskItemId}/events`
@@ -804,11 +817,61 @@ The edge Claw must still enforce version safety locally because node metadata ca
 
 ## Concurrency Rules
 
-Each Claw node may run only one lifecycle task at a time.
+Lifecycle tasks are not globally serialized by default. Some lifecycle tasks can run concurrently, and some must run one by one. The backend must make this controllable in code and configurable in `application.yaml`.
 
-Lifecycle tasks and chat tasks do not block each other.
+Each task type resolves to:
 
-The cloud service enforces this during pull by checking whether the node already has a non-terminal lifecycle task item in `PULLED` or `RUNNING`.
+- `concurrencyGroup`: a named group such as `chat`, `skill-management`, `runtime-management`, or `node-exclusive`.
+- `concurrencyMode`: how this task interacts with other in-flight task items on the same node.
+
+Initial modes:
+
+- `PARALLEL`: does not block or get blocked by other task items.
+- `MUTEX_GROUP`: only one non-terminal task item in the same `concurrencyGroup` can be `PULLED` or `RUNNING` on the same node.
+- `EXCLUSIVE_NODE`: no other non-terminal task item, except `PARALLEL` chat tasks when explicitly allowed, can be `PULLED` or `RUNNING` on the same node.
+
+Default examples:
+
+- `chat`: `group=chat`, `mode=PARALLEL`
+- `skill_install`: `group=skill-management`, `mode=MUTEX_GROUP`
+- `skill_upgrade`: `group=skill-management`, `mode=MUTEX_GROUP`
+- `skill_remove`: `group=skill-management`, `mode=MUTEX_GROUP`
+- `param_update`: `group=param-management`, `mode=PARALLEL`
+- `runtime_install`: `group=runtime-management`, `mode=MUTEX_GROUP`
+- `model_update`: `group=model-management`, `mode=MUTEX_GROUP`
+- `claw_upgrade`: `group=node-exclusive`, `mode=EXCLUSIVE_NODE`
+
+The service enforces this during pull. Before moving a task item to `PULLED`, it checks active task items on the same node, compares the candidate's resolved `concurrencyMode` and `concurrencyGroup`, and returns only task items that can run under the current configuration.
+
+`application.yaml` should support overrides:
+
+```yaml
+clawmgt:
+  tasks:
+    concurrency:
+      defaults:
+        lifecycle-mode: MUTEX_GROUP
+      types:
+        chat:
+          group: chat
+          mode: PARALLEL
+        skill_install:
+          group: skill-management
+          mode: MUTEX_GROUP
+        skill_upgrade:
+          group: skill-management
+          mode: MUTEX_GROUP
+        param_update:
+          group: param-management
+          mode: PARALLEL
+        claw_upgrade:
+          group: node-exclusive
+          mode: EXCLUSIVE_NODE
+```
+
+Configuration should be validated at startup. Unknown task types should fail fast. Missing lifecycle task configuration should fall back to the strategy default, and truly unknown future lifecycle task types should use a conservative `MUTEX_GROUP` default unless explicitly configured.
+
+Chat tasks and lifecycle tasks do not block each other by default because `chat` uses `PARALLEL`. If a future operation must block chat, configure it as `EXCLUSIVE_NODE` and disallow parallel chat for that operation in the concurrency checker.
 
 ## Error Handling
 
@@ -839,7 +902,11 @@ Backend tests should cover:
 - Skill dispatch with multiple Skills creates task-item detail rows
 - Lower Skill versions are stored as rejected detail rows and omitted from dispatch payload
 - Version comparison rules
-- Pulling lifecycle tasks with per-node concurrency
+- Pulling lifecycle tasks with application-configured per-node concurrency
+- `MUTEX_GROUP` blocks only same-group lifecycle tasks
+- `PARALLEL` lifecycle tasks can run with other compatible lifecycle tasks
+- `EXCLUSIVE_NODE` blocks incompatible task items on the same node
+- Startup validation for task concurrency configuration
 - Pulling tasks by channel while resolving the concrete node identity
 - Chat task pull not blocked by lifecycle task
 - Chat session/message creation and chat task creation
@@ -863,6 +930,7 @@ Initial implementation should include:
 - Channel, node, task, task item, task item detail, task event, session, message, report, and Skill metadata tables
 - Task strategy interface and registry
 - Report strategy interface and registry
+- Task concurrency configuration properties and checker
 - Strategies for `chat`, `skill_install`, `skill_upgrade`, `skill_remove`, and `param_update`
 - Generic JSON lifecycle strategy support for future lifecycle task types when payload is accepted as structured JSON
 - Management task APIs
