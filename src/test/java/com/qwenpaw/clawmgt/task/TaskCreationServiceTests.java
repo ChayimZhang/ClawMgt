@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.qwenpaw.clawmgt.api.dto.request.CreateTaskRequest;
 import com.qwenpaw.clawmgt.api.payload.task.SkillInstallPayload;
+import com.qwenpaw.clawmgt.api.payload.task.SkillUpgradePayload;
 import com.qwenpaw.clawmgt.common.BusinessException;
 import com.qwenpaw.clawmgt.domain.entity.ChannelEntity;
 import com.qwenpaw.clawmgt.domain.entity.NodeEntity;
@@ -59,6 +60,9 @@ class TaskCreationServiceTests {
 
     @Autowired
     ObjectMapper objectMapper;
+
+    @Autowired
+    VersionComparator versionComparator;
 
     @BeforeEach
     void cleanDatabase() {
@@ -155,6 +159,39 @@ class TaskCreationServiceTests {
         assertThat(taskRepository.findById(task.getId()).orElseThrow().getStatus()).isEqualTo(TaskStatus.FAILED);
     }
 
+    @Test
+    void skillUpgradeUsesSharedVersionComparisonForRejectedDetails() throws Exception {
+        ChannelEntity channel = channel("alpha");
+        NodeEntity node = node(channel.getId(), "high", NodeStatus.ONLINE);
+        skillMetadata(node.getId(), "alpha-skill", "1.0.0-rc.10");
+
+        TaskEntity task = taskService.createTask(skillUpgradeRequest(channel.getId(), List.of(node.getId()),
+                upgradeSkill("alpha-skill", "1.0.0-rc.2")));
+
+        TaskItemEntity item = taskItemRepository.findByTaskIdOrderByIdAsc(task.getId()).getFirst();
+        assertThat(item.getStatus()).isEqualTo(TaskStatus.FAILED);
+        assertThat(dispatchSkillNames(item)).isEmpty();
+        assertThat(taskItemDetailRepository.findAll())
+                .singleElement()
+                .satisfies(detail -> assertThat(detail.getStatus()).isEqualTo(TaskDetailStatus.REJECTED));
+    }
+
+    @Test
+    void derivesTerminalParentStatuses() {
+        assertThat(taskService.deriveParentStatus(List.of(itemWithStatus(TaskStatus.SUCCEEDED), itemWithStatus(TaskStatus.SUCCEEDED))))
+                .isEqualTo(TaskStatus.SUCCEEDED);
+        assertThat(taskService.deriveParentStatus(List.of(itemWithStatus(TaskStatus.SUCCEEDED), itemWithStatus(TaskStatus.FAILED))))
+                .isEqualTo(TaskStatus.PARTIAL_SUCCEEDED);
+        assertThat(taskService.deriveParentStatus(List.of(itemWithStatus(TaskStatus.CANCELLED), itemWithStatus(TaskStatus.CANCELLED))))
+                .isEqualTo(TaskStatus.CANCELLED);
+    }
+
+    @Test
+    void comparesSemanticVersionSegments() {
+        assertThat(versionComparator.compare("1.2.10", "1.2.3")).isPositive();
+        assertThat(versionComparator.compare("1.0.0-rc.10", "1.0.0-rc.2")).isPositive();
+    }
+
     private CreateTaskRequest skillInstallRequest(Long channelId, List<Long> targetNodeIds,
                                                   SkillInstallPayload.SkillSpec... skills) {
         SkillInstallPayload payload = new SkillInstallPayload();
@@ -169,12 +206,40 @@ class TaskCreationServiceTests {
         return request;
     }
 
+    private CreateTaskRequest skillUpgradeRequest(Long channelId, List<Long> targetNodeIds,
+                                                  SkillUpgradePayload.SkillSpec... skills) {
+        SkillUpgradePayload payload = new SkillUpgradePayload();
+        payload.setSkills(List.of(skills));
+
+        CreateTaskRequest request = new CreateTaskRequest();
+        request.setChannelId(channelId);
+        request.setType(TaskType.SKILL_UPGRADE);
+        request.setTitle("upgrade skills");
+        request.setTargetNodeIds(targetNodeIds);
+        request.setPayload(payload);
+        return request;
+    }
+
     private SkillInstallPayload.SkillSpec skill(String skillName, String version) {
         SkillInstallPayload.SkillSpec spec = new SkillInstallPayload.SkillSpec();
         spec.setSkillName(skillName);
         spec.setVersion(version);
         spec.setDownloadUrl("https://example.com/" + skillName + ".zip");
         return spec;
+    }
+
+    private SkillUpgradePayload.SkillSpec upgradeSkill(String skillName, String version) {
+        SkillUpgradePayload.SkillSpec spec = new SkillUpgradePayload.SkillSpec();
+        spec.setSkillName(skillName);
+        spec.setVersion(version);
+        spec.setDownloadUrl("https://example.com/" + skillName + ".zip");
+        return spec;
+    }
+
+    private TaskItemEntity itemWithStatus(TaskStatus status) {
+        TaskItemEntity item = new TaskItemEntity();
+        item.setStatus(status);
+        return item;
     }
 
     private ChannelEntity channel(String name) {

@@ -139,14 +139,32 @@ public class TaskService {
         return nodes;
     }
 
-    private TaskStatus deriveParentStatus(List<TaskItemEntity> items) {
-        if (items.stream().allMatch(item -> item.getStatus() == TaskStatus.FAILED)) {
+    public TaskStatus deriveParentStatus(List<TaskItemEntity> items) {
+        if (items.isEmpty()) {
             return TaskStatus.FAILED;
+        }
+        if (items.stream().allMatch(item -> item.getStatus() == TaskStatus.DELETED)) {
+            return TaskStatus.DELETED;
+        }
+        if (items.stream().anyMatch(item -> item.getStatus() == TaskStatus.RUNNING)) {
+            return TaskStatus.RUNNING;
+        }
+        if (items.stream().anyMatch(item -> item.getStatus() == TaskStatus.PULLED)) {
+            return TaskStatus.PULLED;
         }
         if (items.stream().anyMatch(item -> item.getStatus() == TaskStatus.PENDING)) {
             return TaskStatus.PENDING;
         }
-        return TaskStatus.PENDING;
+        if (items.stream().allMatch(item -> item.getStatus() == TaskStatus.SUCCEEDED)) {
+            return TaskStatus.SUCCEEDED;
+        }
+        if (items.stream().allMatch(item -> item.getStatus() == TaskStatus.CANCELLED)) {
+            return TaskStatus.CANCELLED;
+        }
+        if (items.stream().allMatch(item -> item.getStatus() == TaskStatus.FAILED)) {
+            return TaskStatus.FAILED;
+        }
+        return TaskStatus.PARTIAL_SUCCEEDED;
     }
 
     private String writePayload(Object payload) {
