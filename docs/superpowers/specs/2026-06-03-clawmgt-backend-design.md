@@ -456,9 +456,12 @@ Each task type maps to a `TaskStrategy`.
 
 ## Report Types
 
-Initial report types:
+Initial report type implementation:
 
 - `skill_metadata`
+
+Reserved report type enum values for future extension:
+
 - `runtime_metadata`
 - `model_metadata`
 - `claw_metadata`
@@ -466,7 +469,7 @@ Initial report types:
 
 Each report type maps to a `ReportStrategy`.
 
-The first implementation must fully handle `skill_metadata`. Other metadata report types can be wired through a generic typed metadata strategy when their payload schema is simple and explicit.
+The first implementation only registers and handles `skill_metadata`. Other report type enum values are reserved extension points; do not build their concrete payload classes, strategies, or business handling until a real reporting requirement appears.
 
 ## Strategy Contract
 
@@ -914,7 +917,6 @@ Initial implementation should include:
 - Report strategy interface and registry
 - Task concurrency configuration properties and checker
 - Strategies for `chat`, `skill_install`, `skill_upgrade`, `skill_remove`, and `param_update`
-- Generic JSON lifecycle strategy support for future lifecycle task types when payload is accepted as structured JSON
 - Management task APIs
 - Conversation APIs
 - Edge Claw channel-scoped register and pull APIs
