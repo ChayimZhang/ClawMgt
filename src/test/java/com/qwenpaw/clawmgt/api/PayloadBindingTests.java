@@ -6,6 +6,11 @@ import com.qwenpaw.clawmgt.api.dto.request.ReportDataRequest;
 import com.qwenpaw.clawmgt.api.payload.report.SkillMetadataReportPayload;
 import com.qwenpaw.clawmgt.api.payload.task.ChatTaskPayload;
 import com.qwenpaw.clawmgt.api.payload.task.SkillInstallPayload;
+import com.qwenpaw.clawmgt.api.payload.task.SkillRemovePayload;
+import com.qwenpaw.clawmgt.api.payload.task.SkillUpgradePayload;
+import com.qwenpaw.clawmgt.api.payload.task.ParamUpdatePayload;
+import com.qwenpaw.clawmgt.domain.enums.ReportType;
+import com.qwenpaw.clawmgt.domain.enums.TaskType;
 import jakarta.validation.ConstraintViolation;
 import jakarta.validation.Validator;
 import org.junit.jupiter.api.Test;
@@ -50,6 +55,7 @@ class PayloadBindingTests {
                 """, CreateTaskRequest.class);
 
         assertThat(request.getPayload()).isInstanceOf(SkillInstallPayload.class);
+        assertThat(request.getType()).isEqualTo(TaskType.SKILL_INSTALL);
         SkillInstallPayload payload = (SkillInstallPayload) request.getPayload();
         assertThat(payload.getSkills()).hasSize(1);
         assertThat(payload.getSkills().getFirst().getSkillName()).isEqualTo("browser");
@@ -72,9 +78,78 @@ class PayloadBindingTests {
                 """, CreateTaskRequest.class);
 
         assertThat(request.getPayload()).isInstanceOf(ChatTaskPayload.class);
+        assertThat(request.getType()).isEqualTo(TaskType.CHAT);
         ChatTaskPayload payload = (ChatTaskPayload) request.getPayload();
         assertThat(payload.getSessionId()).isEqualTo(42L);
         assertThat(payload.getContent()).isEqualTo("hello");
+    }
+
+    @Test
+    void bindsSkillUpgradeTaskPayloadFromTaskType() throws Exception {
+        CreateTaskRequest request = objectMapper.readValue("""
+                {
+                  "channelId": 1,
+                  "type": "skill_upgrade",
+                  "title": "Upgrade skills",
+                  "payload": {
+                    "force": false,
+                    "skills": [
+                      {
+                        "skillName": "browser",
+                        "version": "1.2.4",
+                        "downloadUrl": "http://example.com/browser-1.2.4.zip"
+                      }
+                    ]
+                  }
+                }
+                """, CreateTaskRequest.class);
+
+        assertThat(request.getType()).isEqualTo(TaskType.SKILL_UPGRADE);
+        assertThat(request.getPayload()).isInstanceOf(SkillUpgradePayload.class);
+        SkillUpgradePayload payload = (SkillUpgradePayload) request.getPayload();
+        assertThat(payload.getSkills()).hasSize(1);
+        assertThat(payload.getSkills().getFirst().getVersion()).isEqualTo("1.2.4");
+    }
+
+    @Test
+    void bindsSkillRemoveTaskPayloadFromTaskType() throws Exception {
+        CreateTaskRequest request = objectMapper.readValue("""
+                {
+                  "channelId": 1,
+                  "type": "skill_remove",
+                  "title": "Remove skills",
+                  "payload": {
+                    "skillNames": ["browser"]
+                  }
+                }
+                """, CreateTaskRequest.class);
+
+        assertThat(request.getType()).isEqualTo(TaskType.SKILL_REMOVE);
+        assertThat(request.getPayload()).isInstanceOf(SkillRemovePayload.class);
+        SkillRemovePayload payload = (SkillRemovePayload) request.getPayload();
+        assertThat(payload.getSkillNames()).containsExactly("browser");
+    }
+
+    @Test
+    void bindsParamUpdateTaskPayloadFromTaskType() throws Exception {
+        CreateTaskRequest request = objectMapper.readValue("""
+                {
+                  "channelId": 1,
+                  "type": "param_update",
+                  "title": "Update params",
+                  "payload": {
+                    "skillName": "browser",
+                    "parameters": {
+                      "timeoutSeconds": 60
+                    }
+                  }
+                }
+                """, CreateTaskRequest.class);
+
+        assertThat(request.getType()).isEqualTo(TaskType.PARAM_UPDATE);
+        assertThat(request.getPayload()).isInstanceOf(ParamUpdatePayload.class);
+        ParamUpdatePayload payload = (ParamUpdatePayload) request.getPayload();
+        assertThat(payload.getParameters()).containsEntry("timeoutSeconds", 60);
     }
 
     @Test
@@ -96,6 +171,7 @@ class PayloadBindingTests {
                 }
                 """, ReportDataRequest.class);
 
+        assertThat(request.getType()).isEqualTo(ReportType.SKILL_METADATA);
         assertThat(request.getPayload()).isInstanceOf(SkillMetadataReportPayload.class);
         SkillMetadataReportPayload payload = (SkillMetadataReportPayload) request.getPayload();
         assertThat(payload.getSkills()).hasSize(1);
@@ -109,7 +185,7 @@ class PayloadBindingTests {
                   "channelId": 1,
                   "type": "skill_install",
                   "title": "Install skills",
-                  "targetNodeIds": [0],
+                  "targetNodeIds": [],
                   "payload": {
                     "skills": [
                       {
@@ -127,7 +203,7 @@ class PayloadBindingTests {
         assertThat(violations)
                 .extracting(violation -> violation.getPropertyPath().toString())
                 .contains(
-                        "targetNodeIds[0].<list element>",
+                        "targetNodeIds",
                         "payload.skills[0].skillName",
                         "payload.skills[0].version",
                         "payload.skills[0].downloadUrl"

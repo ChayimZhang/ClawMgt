@@ -33,7 +33,8 @@ public class SkillUpgradePayload implements TaskPayload {
         private String version;
 
         @NotNull
-        @Pattern(regexp = "^[a-zA-Z][a-zA-Z0-9+.-]*:.+$")
+        @Size(max = 2048)
+        @Pattern(regexp = "^https?://[^\\s]+$")
         private String downloadUrl;
 
         @Size(max = 100)

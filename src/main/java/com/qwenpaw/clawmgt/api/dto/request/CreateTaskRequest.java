@@ -33,7 +33,7 @@ public class CreateTaskRequest {
     @Size(max = 200)
     private String title;
 
-    @Size(max = 1000)
+    @Size(min = 1, max = 1000)
     private List<@NotNull @Positive Long> targetNodeIds;
 
     @NotNull
