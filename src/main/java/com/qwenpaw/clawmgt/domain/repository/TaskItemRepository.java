@@ -13,4 +13,6 @@ public interface TaskItemRepository extends JpaRepository<TaskItemEntity, Long> 
     List<TaskItemEntity> findByNodeIdAndStatusIn(Long nodeId, Collection<TaskStatus> statuses);
 
     List<TaskItemEntity> findByChannelIdAndNodeIdAndStatus(Long channelId, Long nodeId, TaskStatus status);
+
+    List<TaskItemEntity> findByChannelIdAndNodeIdAndStatusOrderByIdAsc(Long channelId, Long nodeId, TaskStatus status);
 }
