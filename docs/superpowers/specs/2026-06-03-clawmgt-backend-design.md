@@ -79,8 +79,6 @@ Important fields:
 - `channelId`
 - `type`
 - `category`
-- `concurrencyGroup`
-- `concurrencyMode`
 - `status`
 - `title`
 - `payloadType`
@@ -116,8 +114,6 @@ Important fields:
 - `nodeId`
 - `type`
 - `category`
-- `concurrencyGroup`
-- `concurrencyMode`
 - `status`
 - `payloadType`
 - `payloadSchemaVersion`
@@ -290,8 +286,6 @@ Indexes:
 - `channel_id BIGINT NOT NULL`
 - `type VARCHAR(50) NOT NULL`
 - `category VARCHAR(30) NOT NULL`
-- `concurrency_group VARCHAR(100) NOT NULL`
-- `concurrency_mode VARCHAR(30) NOT NULL`
 - `status VARCHAR(30) NOT NULL`
 - `title VARCHAR(200) NOT NULL`
 - `payload_type VARCHAR(100) NOT NULL`
@@ -312,7 +306,6 @@ Indexes:
 
 - `(channel_id, status)`
 - `(channel_id, type, created_at)`
-- `(channel_id, concurrency_group, status)`
 
 `request_payload` stores the validated and normalized parent payload. For a Skill install task, it stores the full typed list of Skills selected by the user.
 
@@ -324,8 +317,6 @@ Indexes:
 - `node_id BIGINT NOT NULL`
 - `type VARCHAR(50) NOT NULL`
 - `category VARCHAR(30) NOT NULL`
-- `concurrency_group VARCHAR(100) NOT NULL`
-- `concurrency_mode VARCHAR(30) NOT NULL`
 - `status VARCHAR(30) NOT NULL`
 - `payload_type VARCHAR(100) NOT NULL`
 - `payload_schema_version INT NOT NULL`
@@ -342,8 +333,8 @@ Indexes:
 Indexes:
 
 - `(channel_id, node_id, status)`
-- `(node_id, concurrency_group, status)`
-- `(node_id, concurrency_mode, status)`
+- `(node_id, type, status)`
+- `(node_id, category, status)`
 - `(task_id, status)`
 
 `dispatch_payload` stores the node-specific payload returned to edge Claw by the pull API. For Skill install, rejected lower-version Skills should already be removed from this payload.
@@ -493,7 +484,6 @@ Each strategy should answer:
 
 - What task type does this strategy handle?
 - Which category does it use?
-- Which default concurrency group and mode does it use?
 - How should the create request payload be validated?
 - How should the parent payload be normalized?
 - How should each node-specific child payload be built?
@@ -819,7 +809,9 @@ The edge Claw must still enforce version safety locally because node metadata ca
 
 Lifecycle tasks are not globally serialized by default. Some lifecycle tasks can run concurrently, and some must run one by one. The backend must make this controllable in code and configurable in `application.yaml`.
 
-Each task type resolves to:
+Concurrency is a runtime rule, not persisted task data. The database stores only task facts such as type, category, node, status, and timestamps. During pull, the service resolves the candidate task type against the current code and `application.yaml` configuration, so changing concurrency behavior does not require data migration or rewriting existing task rows.
+
+Each task type resolves at runtime to:
 
 - `concurrencyGroup`: a named group such as `chat`, `skill-management`, `runtime-management`, or `node-exclusive`.
 - `concurrencyMode`: how this task interacts with other in-flight task items on the same node.
@@ -841,7 +833,7 @@ Default examples:
 - `model_update`: `group=model-management`, `mode=MUTEX_GROUP`
 - `claw_upgrade`: `group=node-exclusive`, `mode=EXCLUSIVE_NODE`
 
-The service enforces this during pull. Before moving a task item to `PULLED`, it checks active task items on the same node, compares the candidate's resolved `concurrencyMode` and `concurrencyGroup`, and returns only task items that can run under the current configuration.
+The service enforces this during pull. Before moving a task item to `PULLED`, it checks active task items on the same node, resolves concurrency rules for the candidate and active task types from the current configuration, and returns only task items that can run under that configuration.
 
 `application.yaml` should support overrides:
 
