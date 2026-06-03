@@ -12,10 +12,17 @@ import com.qwenpaw.clawmgt.domain.enums.NodeStatus;
 import com.qwenpaw.clawmgt.domain.enums.ReportStatus;
 import com.qwenpaw.clawmgt.domain.enums.ReportType;
 import com.qwenpaw.clawmgt.domain.repository.ChannelRepository;
+import com.qwenpaw.clawmgt.domain.repository.MessageRepository;
 import com.qwenpaw.clawmgt.domain.repository.NodeReportRepository;
 import com.qwenpaw.clawmgt.domain.repository.NodeRepository;
 import com.qwenpaw.clawmgt.domain.repository.NodeSkillMetadataRepository;
+import com.qwenpaw.clawmgt.domain.repository.SessionRepository;
+import com.qwenpaw.clawmgt.domain.repository.TaskEventRepository;
+import com.qwenpaw.clawmgt.domain.repository.TaskItemDetailRepository;
+import com.qwenpaw.clawmgt.domain.repository.TaskItemRepository;
+import com.qwenpaw.clawmgt.domain.repository.TaskRepository;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -41,9 +48,32 @@ class SkillMetadataReportServiceTests {
     NodeReportRepository nodeReportRepository;
     @Autowired
     NodeSkillMetadataRepository nodeSkillMetadataRepository;
+    @Autowired
+    TaskEventRepository taskEventRepository;
+    @Autowired
+    TaskItemDetailRepository taskItemDetailRepository;
+    @Autowired
+    TaskItemRepository taskItemRepository;
+    @Autowired
+    TaskRepository taskRepository;
+    @Autowired
+    MessageRepository messageRepository;
+    @Autowired
+    SessionRepository sessionRepository;
+
+    @BeforeEach
+    void resetDatabase() {
+        cleanDatabase();
+    }
 
     @AfterEach
     void cleanDatabase() {
+        messageRepository.deleteAll();
+        taskEventRepository.deleteAll();
+        taskItemDetailRepository.deleteAll();
+        taskItemRepository.deleteAll();
+        taskRepository.deleteAll();
+        sessionRepository.deleteAll();
         nodeSkillMetadataRepository.deleteAll();
         nodeReportRepository.deleteAll();
         nodeRepository.deleteAll();
@@ -61,7 +91,7 @@ class SkillMetadataReportServiceTests {
 
         List<NodeReportEntity> reports = nodeReportRepository.findAll();
         assertThat(reports).hasSize(1);
-        assertThat(reports.getFirst().getStatus()).isEqualTo(ReportStatus.SUCCESS);
+        assertThat(reports.getFirst().getStatus()).isEqualTo(ReportStatus.APPLIED);
         assertThat(reports.getFirst().getReportType()).isEqualTo(ReportType.SKILL_METADATA);
         assertThat(reports.getFirst().getPayload()).contains("\"skillName\":\"browser\"");
 
@@ -100,7 +130,11 @@ class SkillMetadataReportServiceTests {
                 .isInstanceOf(BusinessException.class)
                 .hasMessageContaining("Unsupported report type");
 
-        assertThat(nodeReportRepository.findAll()).isEmpty();
+        List<NodeReportEntity> reports = nodeReportRepository.findAll();
+        assertThat(reports).hasSize(1);
+        assertThat(reports.getFirst().getStatus()).isEqualTo(ReportStatus.FAILED);
+        assertThat(reports.getFirst().getErrorMessage()).contains("Unsupported report type");
+        assertThat(reports.getFirst().getReportType()).isEqualTo(ReportType.RUNTIME_METADATA);
         assertThat(nodeSkillMetadataRepository.findAll()).isEmpty();
     }
 

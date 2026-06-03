@@ -36,7 +36,7 @@ public class ReportService {
         this.objectMapper = objectMapper;
     }
 
-    @Transactional
+    @Transactional(noRollbackFor = BusinessException.class)
     public NodeReportEntity report(Long nodeId, ReportDataRequest request) {
         nodeService.requireNode(nodeId);
         LocalDateTime now = LocalDateTime.now();
@@ -52,11 +52,25 @@ public class ReportService {
         report.setCreatedAt(now);
         report = nodeReportRepository.save(report);
 
-        ReportStrategy<?> strategy = reportStrategyRegistry.require(request.getType());
-        applyStrategy(strategy, nodeId, request.getPayload());
+        try {
+            ReportStrategy<?> strategy = reportStrategyRegistry.require(request.getType());
+            applyStrategy(strategy, nodeId, request.getPayload());
+        } catch (BusinessException exception) {
+            markFailed(report, exception.getMessage());
+            throw exception;
+        } catch (RuntimeException exception) {
+            markFailed(report, exception.getMessage());
+            throw exception;
+        }
 
-        report.setStatus(ReportStatus.SUCCESS);
+        report.setStatus(ReportStatus.APPLIED);
         return nodeReportRepository.save(report);
+    }
+
+    private void markFailed(NodeReportEntity report, String errorMessage) {
+        report.setStatus(ReportStatus.FAILED);
+        report.setErrorMessage(errorMessage);
+        nodeReportRepository.saveAndFlush(report);
     }
 
     private String serializePayload(ReportPayload payload) {
