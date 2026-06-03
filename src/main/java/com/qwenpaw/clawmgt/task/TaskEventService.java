@@ -1,7 +1,7 @@
 package com.qwenpaw.clawmgt.task;
 
-import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.qwenpaw.clawmgt.api.payload.task.ChatTaskPayload;
 import com.qwenpaw.clawmgt.common.BusinessException;
 import com.qwenpaw.clawmgt.domain.entity.MessageEntity;
 import com.qwenpaw.clawmgt.domain.entity.TaskEntity;
@@ -100,12 +100,8 @@ public class TaskEventService {
             return Optional.empty();
         }
         try {
-            JsonNode root = objectMapper.readTree(payload);
-            JsonNode sessionId = root.get("sessionId");
-            if (sessionId == null || !sessionId.canConvertToLong()) {
-                return Optional.empty();
-            }
-            return Optional.of(sessionId.asLong());
+            ChatTaskPayload chatPayload = objectMapper.readValue(payload, ChatTaskPayload.class);
+            return Optional.ofNullable(chatPayload.getSessionId());
         } catch (Exception ignored) {
             return Optional.empty();
         }
