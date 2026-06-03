@@ -84,16 +84,11 @@ Important fields:
 - `payloadType`
 - `payloadSchemaVersion`
 - `requestPayload`
-- `totalItems`
-- `pendingItems`
-- `runningItems`
-- `partialItems`
-- `succeededItems`
-- `failedItems`
-- `cancelledItems`
 - `createdAt`
 - `updatedAt`
 - `completedAt`
+
+Task item counters are not stored on `tasks`. List and detail APIs should compute totals and status counts from `task_items` with grouped queries.
 
 `category` is a high-level classification. Initial categories:
 
@@ -291,13 +286,6 @@ Indexes:
 - `payload_type VARCHAR(100) NOT NULL`
 - `payload_schema_version INT NOT NULL`
 - `request_payload TEXT NOT NULL`
-- `total_items INT NOT NULL`
-- `pending_items INT NOT NULL`
-- `running_items INT NOT NULL`
-- `partial_items INT NOT NULL`
-- `succeeded_items INT NOT NULL`
-- `failed_items INT NOT NULL`
-- `cancelled_items INT NOT NULL`
 - `created_at TIMESTAMP NOT NULL`
 - `updated_at TIMESTAMP NOT NULL`
 - `completed_at TIMESTAMP`
@@ -308,6 +296,8 @@ Indexes:
 - `(channel_id, type, created_at)`
 
 `request_payload` stores the validated and normalized parent payload. For a Skill install task, it stores the full typed list of Skills selected by the user.
+
+Task summary counts are derived from `task_items` at query time, for example `count(*) grouped by status where task_id in (...)`. Do not duplicate these counts in the `tasks` table.
 
 ### `task_items`
 
@@ -657,7 +647,7 @@ If `targetNodeIds` is omitted, the strategy can create child task items for all 
 
 `GET /api/tasks`
 
-Lists parent tasks with summary counters.
+Lists parent tasks with summary counters computed from associated task items.
 
 Supports filtering by `channelId`, `type`, and `status`.
 
