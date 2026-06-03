@@ -1,0 +1,55 @@
+spring:
+  application:
+    name: clawmgt
+  datasource:
+    url: jdbc:h2:mem:clawmgt;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;DEFAULT_NULL_ORDERING=HIGH
+    username: sa
+    password:
+    driver-class-name: org.h2.Driver
+  h2:
+    console:
+      enabled: true
+      path: /h2-console
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    fail-on-missing-locations: false
+    validate-on-migrate: true
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+    properties:
+      hibernate:
+        format_sql: true
+
+clawmgt:
+  tasks:
+    concurrency:
+      defaults:
+        lifecycle-mode: MUTEX_GROUP
+      types:
+        chat:
+          group: chat
+          mode: PARALLEL
+        skill_install:
+          group: skill-management
+          mode: MUTEX_GROUP
+        skill_upgrade:
+          group: skill-management
+          mode: MUTEX_GROUP
+        skill_remove:
+          group: skill-management
+          mode: MUTEX_GROUP
+        param_update:
+          group: param-management
+          mode: PARALLEL
+        runtime_install:
+          group: runtime-management
+          mode: MUTEX_GROUP
+        model_update:
+          group: model-management
+          mode: MUTEX_GROUP
+        claw_upgrade:
+          group: node-exclusive
+          mode: EXCLUSIVE_NODE
