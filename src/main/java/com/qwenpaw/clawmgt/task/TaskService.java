@@ -20,12 +20,21 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.EnumSet;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
 @Service
 public class TaskService {
+    private static final Set<TaskStatus> TERMINAL_STATUSES = EnumSet.of(
+            TaskStatus.SUCCEEDED,
+            TaskStatus.PARTIAL_SUCCEEDED,
+            TaskStatus.FAILED,
+            TaskStatus.CANCELLED,
+            TaskStatus.DELETED
+    );
+
     private final ChannelRepository channelRepository;
     private final NodeRepository nodeRepository;
     private final TaskRepository taskRepository;
@@ -165,6 +174,46 @@ public class TaskService {
             return TaskStatus.FAILED;
         }
         return TaskStatus.PARTIAL_SUCCEEDED;
+    }
+
+    @Transactional
+    public TaskEntity cancelTask(Long taskId, String reason) {
+        return completeTaskItems(taskId, TaskStatus.CANCELLED, reason);
+    }
+
+    @Transactional
+    public TaskEntity deleteTask(Long taskId, String reason) {
+        return completeTaskItems(taskId, TaskStatus.DELETED, reason);
+    }
+
+    private TaskEntity completeTaskItems(Long taskId, TaskStatus status, String reason) {
+        TaskEntity task = taskRepository.findById(taskId)
+                .orElseThrow(() -> new BusinessException(HttpStatus.NOT_FOUND, "TASK_NOT_FOUND",
+                        "Task does not exist: " + taskId));
+        List<TaskItemEntity> items = taskItemRepository.findByTaskIdOrderByIdAsc(taskId);
+        if (items.stream().anyMatch(item -> item.getStatus() == TaskStatus.RUNNING)) {
+            throw new BusinessException(HttpStatus.CONFLICT, "TASK_RUNNING",
+                    "Cannot change task " + taskId + " while it has running items");
+        }
+
+        LocalDateTime now = LocalDateTime.now();
+        for (TaskItemEntity item : items) {
+            if (TERMINAL_STATUSES.contains(item.getStatus())) {
+                continue;
+            }
+            item.setStatus(status);
+            item.setErrorMessage(reason);
+            item.setCompletedAt(now);
+            item.setUpdatedAt(now);
+            taskItemRepository.save(item);
+        }
+
+        task.setStatus(deriveParentStatus(taskItemRepository.findByTaskIdOrderByIdAsc(taskId)));
+        task.setUpdatedAt(now);
+        if (TERMINAL_STATUSES.contains(task.getStatus())) {
+            task.setCompletedAt(now);
+        }
+        return taskRepository.save(task);
     }
 
     private String writePayload(Object payload) {

@@ -19,7 +19,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-@WebMvcTest
+@WebMvcTest(controllers = GlobalExceptionHandlerTests.TestController.class)
 @Import({GlobalExceptionHandler.class, GlobalExceptionHandlerTests.TestController.class})
 class GlobalExceptionHandlerTests {
     @Autowired
