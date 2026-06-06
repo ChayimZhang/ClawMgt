@@ -21,7 +21,7 @@ Create this Maven project structure:
 - `src/main/java/com/qwenpaw/clawmgt/common/ApiResponse.java`: consistent response wrapper.
 - `src/main/java/com/qwenpaw/clawmgt/common/BusinessException.java`: domain exception.
 - `src/main/java/com/qwenpaw/clawmgt/common/GlobalExceptionHandler.java`: validation and business error handling.
-- `src/main/java/com/qwenpaw/clawmgt/domain/enums/*.java`: task, report, status, category, role, source, node enums.
+- `src/main/java/com/qwenpaw/clawmgt/domain/enums/*.java`: task, report, status, role, source, node enums.
 - `src/main/java/com/qwenpaw/clawmgt/domain/entity/*.java`: JPA entities for channel, node, task, task item, task detail, event, session, message, report, and Skill metadata.
 - `src/main/java/com/qwenpaw/clawmgt/domain/repository/*.java`: Spring Data repositories.
 - `src/main/java/com/qwenpaw/clawmgt/api/dto/**/*.java`: strongly typed requests and responses.
@@ -168,7 +168,6 @@ git commit -m "feat: add initial database schema"
 
 **Files:**
 - Create: `src/main/java/com/qwenpaw/clawmgt/domain/enums/TaskType.java`
-- Create: `src/main/java/com/qwenpaw/clawmgt/domain/enums/TaskCategory.java`
 - Create: `src/main/java/com/qwenpaw/clawmgt/domain/enums/TaskStatus.java`
 - Create: `src/main/java/com/qwenpaw/clawmgt/domain/enums/TaskDetailStatus.java`
 - Create: `src/main/java/com/qwenpaw/clawmgt/domain/enums/ReportType.java`
@@ -364,7 +363,7 @@ Cover multi-node Skill install, multi-Skill detail rows, lower-version rejection
 
 - [ ] **Step 2: Implement strategy contract**
 
-The strategy contract should return task category, normalized parent payload, node dispatch payload, task-item detail rows, and pre-dispatch validation results.
+The strategy contract should return normalized parent payload, node dispatch payload, task-item detail rows, and pre-dispatch validation results.
 
 - [ ] **Step 3: Implement Skill install and upgrade strategies**
 
@@ -410,7 +409,7 @@ git commit -m "feat: add task creation strategies"
 
 - [ ] **Step 1: Write concurrency tests**
 
-Assert `MUTEX_GROUP` blocks same-group lifecycle tasks, `PARALLEL` allows compatible lifecycle tasks, `EXCLUSIVE_NODE` blocks incompatible active task items, and chat tasks are parallel by default.
+Assert `MUTEX_GROUP` blocks same-group lifecycle tasks, `PARALLEL` allows compatible configured task types, and `EXCLUSIVE_NODE` blocks incompatible active task items.
 
 - [ ] **Step 2: Implement concurrency properties**
 

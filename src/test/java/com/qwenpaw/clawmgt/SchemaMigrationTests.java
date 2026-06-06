@@ -20,4 +20,15 @@ class SchemaMigrationTests {
                 Integer.class);
         assertThat(count).isEqualTo(10);
     }
+
+    @Test
+    void taskTablesDoNotPersistCategory() {
+        Integer count = jdbcTemplate.queryForObject(
+                "select count(*) from information_schema.columns " +
+                        "where table_schema = 'public' " +
+                        "and upper(table_name) in ('TASKS', 'TASK_ITEMS') " +
+                        "and upper(column_name) = 'CATEGORY'",
+                Integer.class);
+        assertThat(count).isZero();
+    }
 }

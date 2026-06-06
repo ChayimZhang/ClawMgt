@@ -18,7 +18,7 @@ public class TaskConcurrencyChecker {
     }
 
     public boolean canPull(TaskItemEntity candidate, List<TaskItemEntity> activeItems) {
-        Policy candidatePolicy = properties.policyFor(candidate.getType(), candidate.getCategory());
+        Policy candidatePolicy = properties.policyFor(candidate.getType());
         List<TaskItemEntity> sameNodeActive = activeItems.stream()
                 .filter(item -> item.getNodeId().equals(candidate.getNodeId()))
                 .filter(this::isActive)
@@ -30,7 +30,7 @@ public class TaskConcurrencyChecker {
             return false;
         }
         for (TaskItemEntity activeItem : sameNodeActive) {
-            Policy activePolicy = properties.policyFor(activeItem.getType(), activeItem.getCategory());
+            Policy activePolicy = properties.policyFor(activeItem.getType());
             if (activePolicy.mode() == ConcurrencyMode.EXCLUSIVE_NODE) {
                 return false;
             }

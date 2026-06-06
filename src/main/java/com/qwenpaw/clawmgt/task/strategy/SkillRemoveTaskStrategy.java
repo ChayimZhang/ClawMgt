@@ -2,7 +2,6 @@ package com.qwenpaw.clawmgt.task.strategy;
 
 import com.qwenpaw.clawmgt.api.payload.task.SkillRemovePayload;
 import com.qwenpaw.clawmgt.domain.entity.NodeEntity;
-import com.qwenpaw.clawmgt.domain.enums.TaskCategory;
 import com.qwenpaw.clawmgt.domain.enums.TaskDetailStatus;
 import com.qwenpaw.clawmgt.domain.enums.TaskStatus;
 import com.qwenpaw.clawmgt.domain.enums.TaskType;
@@ -16,11 +15,6 @@ public class SkillRemoveTaskStrategy implements TaskStrategy<SkillRemovePayload>
     @Override
     public TaskType taskType() {
         return TaskType.SKILL_REMOVE;
-    }
-
-    @Override
-    public TaskCategory category() {
-        return TaskCategory.SKILL;
     }
 
     @Override

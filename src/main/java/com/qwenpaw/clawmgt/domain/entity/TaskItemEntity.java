@@ -1,6 +1,5 @@
 package com.qwenpaw.clawmgt.domain.entity;
 
-import com.qwenpaw.clawmgt.domain.enums.TaskCategory;
 import com.qwenpaw.clawmgt.domain.enums.TaskStatus;
 import com.qwenpaw.clawmgt.domain.enums.TaskType;
 import jakarta.persistence.Column;
@@ -37,10 +36,6 @@ public class TaskItemEntity {
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 50)
     private TaskType type;
-
-    @Enumerated(EnumType.STRING)
-    @Column(nullable = false, length = 30)
-    private TaskCategory category;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 30)

@@ -73,7 +73,6 @@ public class TaskService {
         TaskEntity task = new TaskEntity();
         task.setChannelId(request.getChannelId());
         task.setType(request.getType());
-        task.setCategory(strategy.category());
         task.setStatus(TaskStatus.PENDING);
         task.setTitle(request.getTitle());
         task.setPayloadType(strategy.payloadType());
@@ -90,7 +89,6 @@ public class TaskService {
             item.setChannelId(request.getChannelId());
             item.setNodeId(node.getId());
             item.setType(request.getType());
-            item.setCategory(strategy.category());
             item.setStatus(plan.status());
             item.setPayloadType(strategy.payloadType());
             item.setPayloadSchemaVersion(strategy.payloadSchemaVersion());

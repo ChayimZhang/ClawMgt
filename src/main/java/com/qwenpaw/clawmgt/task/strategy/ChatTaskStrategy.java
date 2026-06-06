@@ -2,7 +2,6 @@ package com.qwenpaw.clawmgt.task.strategy;
 
 import com.qwenpaw.clawmgt.api.payload.task.ChatTaskPayload;
 import com.qwenpaw.clawmgt.domain.entity.NodeEntity;
-import com.qwenpaw.clawmgt.domain.enums.TaskCategory;
 import com.qwenpaw.clawmgt.domain.enums.TaskStatus;
 import com.qwenpaw.clawmgt.domain.enums.TaskType;
 import com.qwenpaw.clawmgt.task.TaskStrategy;
@@ -15,11 +14,6 @@ public class ChatTaskStrategy implements TaskStrategy<ChatTaskPayload> {
     @Override
     public TaskType taskType() {
         return TaskType.CHAT;
-    }
-
-    @Override
-    public TaskCategory category() {
-        return TaskCategory.CHAT;
     }
 
     @Override

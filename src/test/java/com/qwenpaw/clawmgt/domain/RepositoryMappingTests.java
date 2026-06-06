@@ -16,7 +16,6 @@ import com.qwenpaw.clawmgt.domain.enums.NodeStatus;
 import com.qwenpaw.clawmgt.domain.enums.ReportStatus;
 import com.qwenpaw.clawmgt.domain.enums.ReportType;
 import com.qwenpaw.clawmgt.domain.enums.SessionStatus;
-import com.qwenpaw.clawmgt.domain.enums.TaskCategory;
 import com.qwenpaw.clawmgt.domain.enums.TaskDetailStatus;
 import com.qwenpaw.clawmgt.domain.enums.TaskStatus;
 import com.qwenpaw.clawmgt.domain.enums.TaskType;
@@ -87,7 +86,6 @@ class RepositoryMappingTests {
         TaskEntity task = new TaskEntity();
         task.setChannelId(channel.getId());
         task.setType(TaskType.CHAT);
-        task.setCategory(TaskCategory.CHAT);
         task.setStatus(TaskStatus.PENDING);
         task.setTitle("Chat with node");
         task.setPayloadType("chat");
@@ -102,7 +100,6 @@ class RepositoryMappingTests {
         taskItem.setChannelId(channel.getId());
         taskItem.setNodeId(node.getId());
         taskItem.setType(TaskType.CHAT);
-        taskItem.setCategory(TaskCategory.CHAT);
         taskItem.setStatus(TaskStatus.PENDING);
         taskItem.setPayloadType("chat");
         taskItem.setPayloadSchemaVersion(1);

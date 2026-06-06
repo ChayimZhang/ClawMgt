@@ -2,8 +2,6 @@ package com.qwenpaw.clawmgt.task.strategy;
 
 import com.qwenpaw.clawmgt.api.payload.task.SkillInstallPayload;
 import com.qwenpaw.clawmgt.domain.entity.NodeEntity;
-import com.qwenpaw.clawmgt.domain.entity.NodeSkillMetadataEntity;
-import com.qwenpaw.clawmgt.domain.enums.TaskCategory;
 import com.qwenpaw.clawmgt.domain.enums.TaskDetailStatus;
 import com.qwenpaw.clawmgt.domain.enums.TaskStatus;
 import com.qwenpaw.clawmgt.domain.enums.TaskType;
@@ -28,11 +26,6 @@ public class SkillInstallTaskStrategy implements TaskStrategy<SkillInstallPayloa
     @Override
     public TaskType taskType() {
         return TaskType.SKILL_INSTALL;
-    }
-
-    @Override
-    public TaskCategory category() {
-        return TaskCategory.SKILL;
     }
 
     @Override

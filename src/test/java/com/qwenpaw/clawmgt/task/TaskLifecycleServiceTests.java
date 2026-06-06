@@ -13,7 +13,6 @@ import com.qwenpaw.clawmgt.domain.enums.MessageRole;
 import com.qwenpaw.clawmgt.domain.enums.MessageSource;
 import com.qwenpaw.clawmgt.domain.enums.NodeStatus;
 import com.qwenpaw.clawmgt.domain.enums.SessionStatus;
-import com.qwenpaw.clawmgt.domain.enums.TaskCategory;
 import com.qwenpaw.clawmgt.domain.enums.TaskStatus;
 import com.qwenpaw.clawmgt.domain.enums.TaskType;
 import com.qwenpaw.clawmgt.domain.repository.ChannelRepository;
@@ -84,8 +83,8 @@ class TaskLifecycleServiceTests {
         ChannelEntity channel = channel("alpha");
         NodeEntity node = node(channel.getId(), "node-1");
         TaskEntity task = task(channel.getId(), TaskType.SKILL_INSTALL);
-        TaskItemEntity success = taskItem(task, node.getId(), TaskType.SKILL_INSTALL, TaskCategory.SKILL, TaskStatus.RUNNING);
-        taskItem(task, node.getId(), TaskType.SKILL_INSTALL, TaskCategory.SKILL, TaskStatus.FAILED);
+        TaskItemEntity success = taskItem(task, node.getId(), TaskType.SKILL_INSTALL, TaskStatus.RUNNING);
+        taskItem(task, node.getId(), TaskType.SKILL_INSTALL, TaskStatus.FAILED);
 
         TaskItemEntity finished = taskLifecycleService.finish(success.getId(), TaskStatus.SUCCEEDED,
                 "{\"installed\":true}", null);
@@ -103,8 +102,8 @@ class TaskLifecycleServiceTests {
         ChannelEntity channel = channel("alpha");
         NodeEntity node = node(channel.getId(), "node-1");
         TaskEntity task = task(channel.getId(), TaskType.SKILL_INSTALL);
-        TaskItemEntity first = taskItem(task, node.getId(), TaskType.SKILL_INSTALL, TaskCategory.SKILL, TaskStatus.RUNNING);
-        taskItem(task, node.getId(), TaskType.SKILL_INSTALL, TaskCategory.SKILL, TaskStatus.SUCCEEDED);
+        TaskItemEntity first = taskItem(task, node.getId(), TaskType.SKILL_INSTALL, TaskStatus.RUNNING);
+        taskItem(task, node.getId(), TaskType.SKILL_INSTALL, TaskStatus.SUCCEEDED);
 
         taskLifecycleService.finish(first.getId(), TaskStatus.SUCCEEDED, null, null);
 
@@ -118,7 +117,7 @@ class TaskLifecycleServiceTests {
         ChannelEntity channel = channel("alpha");
         NodeEntity node = node(channel.getId(), "node-1");
         TaskEntity task = task(channel.getId(), TaskType.CHAT);
-        TaskItemEntity item = taskItem(task, node.getId(), TaskType.CHAT, TaskCategory.CHAT, TaskStatus.RUNNING);
+        TaskItemEntity item = taskItem(task, node.getId(), TaskType.CHAT, TaskStatus.RUNNING);
 
         assertThatThrownBy(() -> taskLifecycleService.cancel(item.getId(), "operator requested"))
                 .isInstanceOf(BusinessException.class)
@@ -131,7 +130,7 @@ class TaskLifecycleServiceTests {
         NodeEntity node = node(channel.getId(), "node-1");
         SessionEntity session = session(channel.getId(), node.getId());
         TaskEntity task = task(channel.getId(), TaskType.CHAT, "{\"sessionId\":" + session.getId() + "}");
-        TaskItemEntity item = taskItem(task, node.getId(), TaskType.CHAT, TaskCategory.CHAT, TaskStatus.RUNNING,
+        TaskItemEntity item = taskItem(task, node.getId(), TaskType.CHAT, TaskStatus.RUNNING,
                 "{\"sessionId\":" + session.getId() + ",\"content\":\"hello\"}");
 
         TaskEventEntity event = taskEventService.recordEvent(item.getId(), "event-1", "message.delta",
@@ -189,7 +188,6 @@ class TaskLifecycleServiceTests {
         TaskEntity task = new TaskEntity();
         task.setChannelId(channelId);
         task.setType(type);
-        task.setCategory(type == TaskType.CHAT ? TaskCategory.CHAT : TaskCategory.SKILL);
         task.setStatus(TaskStatus.PENDING);
         task.setTitle(type.name());
         task.setPayloadType(type.name().toLowerCase());
@@ -200,11 +198,11 @@ class TaskLifecycleServiceTests {
         return taskRepository.save(task);
     }
 
-    private TaskItemEntity taskItem(TaskEntity task, Long nodeId, TaskType type, TaskCategory category, TaskStatus status) {
-        return taskItem(task, nodeId, type, category, status, "{}");
+    private TaskItemEntity taskItem(TaskEntity task, Long nodeId, TaskType type, TaskStatus status) {
+        return taskItem(task, nodeId, type, status, "{}");
     }
 
-    private TaskItemEntity taskItem(TaskEntity task, Long nodeId, TaskType type, TaskCategory category,
+    private TaskItemEntity taskItem(TaskEntity task, Long nodeId, TaskType type,
                                     TaskStatus status, String dispatchPayload) {
         LocalDateTime now = LocalDateTime.now();
         TaskItemEntity item = new TaskItemEntity();
@@ -212,7 +210,6 @@ class TaskLifecycleServiceTests {
         item.setChannelId(task.getChannelId());
         item.setNodeId(nodeId);
         item.setType(type);
-        item.setCategory(category);
         item.setStatus(status);
         item.setPayloadType(type.name().toLowerCase());
         item.setPayloadSchemaVersion(1);

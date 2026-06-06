@@ -1,7 +1,6 @@
 package com.qwenpaw.clawmgt.api.dto.response;
 
 import com.qwenpaw.clawmgt.domain.entity.TaskItemEntity;
-import com.qwenpaw.clawmgt.domain.enums.TaskCategory;
 import com.qwenpaw.clawmgt.domain.enums.TaskStatus;
 import com.qwenpaw.clawmgt.domain.enums.TaskType;
 
@@ -14,7 +13,6 @@ public record TaskItemResponse(
         Long channelId,
         Long nodeId,
         TaskType type,
-        TaskCategory category,
         TaskStatus status,
         String payloadType,
         Integer payloadSchemaVersion,
@@ -35,7 +33,6 @@ public record TaskItemResponse(
                 item.getChannelId(),
                 item.getNodeId(),
                 item.getType(),
-                item.getCategory(),
                 item.getStatus(),
                 item.getPayloadType(),
                 item.getPayloadSchemaVersion(),

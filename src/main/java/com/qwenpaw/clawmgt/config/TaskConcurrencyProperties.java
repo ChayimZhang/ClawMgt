@@ -1,6 +1,5 @@
 package com.qwenpaw.clawmgt.config;
 
-import com.qwenpaw.clawmgt.domain.enums.TaskCategory;
 import com.qwenpaw.clawmgt.domain.enums.TaskType;
 import jakarta.annotation.PostConstruct;
 import org.springframework.boot.context.properties.ConfigurationProperties;
@@ -29,16 +28,13 @@ public class TaskConcurrencyProperties {
         });
     }
 
-    public Policy policyFor(TaskType taskType, TaskCategory category) {
+    public Policy policyFor(TaskType taskType) {
         TypeConcurrency type = types.get(normalize(taskType.name()));
         if (type == null) {
             type = types.get(taskType.name().toLowerCase(Locale.ROOT));
         }
         if (type != null) {
             return new Policy(blankToDefault(type.group, defaultGroup(taskType)), type.mode);
-        }
-        if (taskType == TaskType.CHAT || category == TaskCategory.CHAT) {
-            return new Policy("chat", ConcurrencyMode.PARALLEL);
         }
         return new Policy(defaultGroup(taskType), defaults.lifecycleMode);
     }

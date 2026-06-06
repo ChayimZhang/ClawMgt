@@ -6,7 +6,6 @@ import com.qwenpaw.clawmgt.domain.entity.TaskEntity;
 import com.qwenpaw.clawmgt.domain.entity.TaskItemEntity;
 import com.qwenpaw.clawmgt.domain.enums.ChannelStatus;
 import com.qwenpaw.clawmgt.domain.enums.NodeStatus;
-import com.qwenpaw.clawmgt.domain.enums.TaskCategory;
 import com.qwenpaw.clawmgt.domain.enums.TaskStatus;
 import com.qwenpaw.clawmgt.domain.enums.TaskType;
 import com.qwenpaw.clawmgt.domain.repository.ChannelRepository;
@@ -62,35 +61,35 @@ class TaskPullConcurrencyTests {
     }
 
     @Test
-    void mutexGroupBlocksSameNodeSameGroupLifecycleTasksButChatIsParallel() {
+    void mutexGroupBlocksSameNodeSameGroupTasksButParallelTaskTypesCanRun() {
         ChannelEntity channel = channel("alpha");
         NodeEntity node = node(channel.getId(), "node-1");
         TaskItemEntity activeInstall = taskItem(task(channel.getId(), TaskType.SKILL_INSTALL), node.getId(),
-                TaskType.SKILL_INSTALL, TaskCategory.SKILL, TaskStatus.RUNNING);
+                TaskType.SKILL_INSTALL, TaskStatus.RUNNING);
         TaskItemEntity pendingUpgrade = taskItem(task(channel.getId(), TaskType.SKILL_UPGRADE), node.getId(),
-                TaskType.SKILL_UPGRADE, TaskCategory.SKILL, TaskStatus.PENDING);
-        TaskItemEntity pendingChat = taskItem(task(channel.getId(), TaskType.CHAT), node.getId(),
-                TaskType.CHAT, TaskCategory.CHAT, TaskStatus.PENDING);
+                TaskType.SKILL_UPGRADE, TaskStatus.PENDING);
+        TaskItemEntity pendingParamUpdate = taskItem(task(channel.getId(), TaskType.PARAM_UPDATE), node.getId(),
+                TaskType.PARAM_UPDATE, TaskStatus.PENDING);
 
         assertThat(concurrencyChecker.canPull(pendingUpgrade, List.of(activeInstall))).isFalse();
-        assertThat(concurrencyChecker.canPull(pendingChat, List.of(activeInstall))).isTrue();
+        assertThat(concurrencyChecker.canPull(pendingParamUpdate, List.of(activeInstall))).isTrue();
     }
 
     @Test
     void exclusiveNodeBlocksAnyActiveItemAndIsBlockedByAnyActiveExclusiveItem() {
         ChannelEntity channel = channel("alpha");
         NodeEntity node = node(channel.getId(), "node-1");
-        TaskItemEntity activeChat = taskItem(task(channel.getId(), TaskType.CHAT), node.getId(),
-                TaskType.CHAT, TaskCategory.CHAT, TaskStatus.PULLED);
+        TaskItemEntity activeParamUpdate = taskItem(task(channel.getId(), TaskType.PARAM_UPDATE), node.getId(),
+                TaskType.PARAM_UPDATE, TaskStatus.PULLED);
         TaskItemEntity pendingClawUpgrade = taskItem(task(channel.getId(), TaskType.CLAW_UPGRADE), node.getId(),
-                TaskType.CLAW_UPGRADE, TaskCategory.CLAW, TaskStatus.PENDING);
+                TaskType.CLAW_UPGRADE, TaskStatus.PENDING);
         TaskItemEntity activeClawUpgrade = taskItem(task(channel.getId(), TaskType.CLAW_UPGRADE), node.getId(),
-                TaskType.CLAW_UPGRADE, TaskCategory.CLAW, TaskStatus.RUNNING);
-        TaskItemEntity pendingChat = taskItem(task(channel.getId(), TaskType.CHAT), node.getId(),
-                TaskType.CHAT, TaskCategory.CHAT, TaskStatus.PENDING);
+                TaskType.CLAW_UPGRADE, TaskStatus.RUNNING);
+        TaskItemEntity pendingParamUpdate = taskItem(task(channel.getId(), TaskType.PARAM_UPDATE), node.getId(),
+                TaskType.PARAM_UPDATE, TaskStatus.PENDING);
 
-        assertThat(concurrencyChecker.canPull(pendingClawUpgrade, List.of(activeChat))).isFalse();
-        assertThat(concurrencyChecker.canPull(pendingChat, List.of(activeClawUpgrade))).isFalse();
+        assertThat(concurrencyChecker.canPull(pendingClawUpgrade, List.of(activeParamUpdate))).isFalse();
+        assertThat(concurrencyChecker.canPull(pendingParamUpdate, List.of(activeClawUpgrade))).isFalse();
     }
 
     @Test
@@ -99,13 +98,13 @@ class TaskPullConcurrencyTests {
         NodeEntity node = node(channel.getId(), "node-1");
         NodeEntity otherNode = node(channel.getId(), "node-2");
         taskItem(task(channel.getId(), TaskType.SKILL_INSTALL), node.getId(),
-                TaskType.SKILL_INSTALL, TaskCategory.SKILL, TaskStatus.RUNNING);
+                TaskType.SKILL_INSTALL, TaskStatus.RUNNING);
         TaskItemEntity blocked = taskItem(task(channel.getId(), TaskType.SKILL_UPGRADE), node.getId(),
-                TaskType.SKILL_UPGRADE, TaskCategory.SKILL, TaskStatus.PENDING);
-        TaskItemEntity allowed = taskItem(task(channel.getId(), TaskType.CHAT), node.getId(),
-                TaskType.CHAT, TaskCategory.CHAT, TaskStatus.PENDING);
-        TaskItemEntity otherNodeItem = taskItem(task(channel.getId(), TaskType.CHAT), otherNode.getId(),
-                TaskType.CHAT, TaskCategory.CHAT, TaskStatus.PENDING);
+                TaskType.SKILL_UPGRADE, TaskStatus.PENDING);
+        TaskItemEntity allowed = taskItem(task(channel.getId(), TaskType.PARAM_UPDATE), node.getId(),
+                TaskType.PARAM_UPDATE, TaskStatus.PENDING);
+        TaskItemEntity otherNodeItem = taskItem(task(channel.getId(), TaskType.PARAM_UPDATE), otherNode.getId(),
+                TaskType.PARAM_UPDATE, TaskStatus.PENDING);
 
         List<TaskItemEntity> pulled = taskPullService.pull(channel.getId(), node.getId(), 10);
 
@@ -148,7 +147,6 @@ class TaskPullConcurrencyTests {
         TaskEntity task = new TaskEntity();
         task.setChannelId(channelId);
         task.setType(type);
-        task.setCategory(category(type));
         task.setStatus(TaskStatus.PENDING);
         task.setTitle(type.name());
         task.setPayloadType(type.name().toLowerCase());
@@ -159,14 +157,13 @@ class TaskPullConcurrencyTests {
         return taskRepository.save(task);
     }
 
-    private TaskItemEntity taskItem(TaskEntity task, Long nodeId, TaskType type, TaskCategory category, TaskStatus status) {
+    private TaskItemEntity taskItem(TaskEntity task, Long nodeId, TaskType type, TaskStatus status) {
         LocalDateTime now = LocalDateTime.now();
         TaskItemEntity item = new TaskItemEntity();
         item.setTaskId(task.getId());
         item.setChannelId(task.getChannelId());
         item.setNodeId(nodeId);
         item.setType(type);
-        item.setCategory(category);
         item.setStatus(status);
         item.setPayloadType(type.name().toLowerCase());
         item.setPayloadSchemaVersion(1);
@@ -174,14 +171,5 @@ class TaskPullConcurrencyTests {
         item.setCreatedAt(now);
         item.setUpdatedAt(now);
         return taskItemRepository.save(item);
-    }
-
-    private TaskCategory category(TaskType type) {
-        return switch (type) {
-            case CHAT -> TaskCategory.CHAT;
-            case CLAW_UPGRADE -> TaskCategory.CLAW;
-            case PARAM_UPDATE -> TaskCategory.PARAM;
-            default -> TaskCategory.SKILL;
-        };
     }
 }

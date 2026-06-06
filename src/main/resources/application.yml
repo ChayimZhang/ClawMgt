@@ -29,9 +29,6 @@ clawmgt:
       defaults:
         lifecycle-mode: MUTEX_GROUP
       types:
-        chat:
-          group: chat
-          mode: PARALLEL
         skill_install:
           group: skill-management
           mode: MUTEX_GROUP

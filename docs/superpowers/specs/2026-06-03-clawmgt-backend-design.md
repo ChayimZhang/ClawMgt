@@ -78,7 +78,6 @@ Important fields:
 - `id`
 - `channelId`
 - `type`
-- `category`
 - `status`
 - `title`
 - `payloadType`
@@ -90,12 +89,7 @@ Important fields:
 
 Task item counters are not stored on `tasks`. List and detail APIs should compute totals and status counts from `task_items` with grouped queries.
 
-`category` is a high-level classification. Initial categories:
-
-- `CHAT`: normal dialogue tasks
-- `LIFECYCLE`: Skill install, Skill upgrade, parameter updates, runtime install, and similar management operations
-
-Concrete concurrency is controlled by task type configuration, not by `category` alone.
+Concrete concurrency is controlled by task type configuration. `tasks` does not persist a category field.
 
 ### TaskItem
 
@@ -108,7 +102,6 @@ Important fields:
 - `channelId`
 - `nodeId`
 - `type`
-- `category`
 - `status`
 - `payloadType`
 - `payloadSchemaVersion`
@@ -280,7 +273,6 @@ Indexes:
 - `id BIGINT PRIMARY KEY`
 - `channel_id BIGINT NOT NULL`
 - `type VARCHAR(50) NOT NULL`
-- `category VARCHAR(30) NOT NULL`
 - `status VARCHAR(30) NOT NULL`
 - `title VARCHAR(200) NOT NULL`
 - `payload_type VARCHAR(100) NOT NULL`
@@ -306,7 +298,6 @@ Task summary counts are derived from `task_items` at query time, for example `co
 - `channel_id BIGINT NOT NULL`
 - `node_id BIGINT NOT NULL`
 - `type VARCHAR(50) NOT NULL`
-- `category VARCHAR(30) NOT NULL`
 - `status VARCHAR(30) NOT NULL`
 - `payload_type VARCHAR(100) NOT NULL`
 - `payload_schema_version INT NOT NULL`
@@ -324,7 +315,6 @@ Indexes:
 
 - `(channel_id, node_id, status)`
 - `(node_id, type, status)`
-- `(node_id, category, status)`
 - `(task_id, status)`
 
 `dispatch_payload` stores the node-specific payload returned to edge Claw by the pull API. For Skill install, rejected lower-version Skills should already be removed from this payload.
@@ -476,7 +466,6 @@ The first implementation only registers and handles `skill_metadata`. Other repo
 Each strategy should answer:
 
 - What task type does this strategy handle?
-- Which category does it use?
 - How should the create request payload be validated?
 - How should the parent payload be normalized?
 - How should each node-specific child payload be built?
@@ -596,7 +585,7 @@ Flow:
 
 1. The management side creates or reuses a `session` under a `channel`.
 2. The user message is stored in `messages`.
-3. The chat service creates a parent `task` with `type=chat`, `category=CHAT`, `channel_id=session.channel_id`, and a typed `ChatTaskPayload`.
+3. The chat service creates a parent `task` with `type=chat`, `channel_id=session.channel_id`, and a typed `ChatTaskPayload`.
 4. The chat strategy creates one `task_item`. If a concrete node is already chosen, the item is assigned to that node. Otherwise, the strategy can assign an eligible node under the channel according to the routing rule chosen for the first implementation.
 5. Edge Claw pulls the task by channel, executes the chat through its CloudChannel or equivalent local channel, and pushes stream events into `task_events`.
 6. The backend stores assistant/tool/system content from events into `messages` when appropriate.
@@ -802,22 +791,21 @@ The edge Claw must still enforce version safety locally because node metadata ca
 
 Lifecycle tasks are not globally serialized by default. Some lifecycle tasks can run concurrently, and some must run one by one. The backend must make this controllable in code and configurable in `application.yaml`.
 
-Concurrency is a runtime rule, not persisted task data. The database stores only task facts such as type, category, node, status, and timestamps. During pull, the service resolves the candidate task type against the current code and `application.yaml` configuration, so changing concurrency behavior does not require data migration or rewriting existing task rows.
+Concurrency is a runtime rule, not persisted task data. The database stores only task facts such as type, node, status, and timestamps. During pull, the service resolves the candidate task type against the current code and `application.yaml` configuration, so changing concurrency behavior does not require data migration or rewriting existing task rows.
 
 Each task type resolves at runtime to:
 
-- `concurrencyGroup`: a named group such as `chat`, `skill-management`, `runtime-management`, or `node-exclusive`.
+- `concurrencyGroup`: a named group such as `skill-management`, `param-management`, `runtime-management`, or `node-exclusive`.
 - `concurrencyMode`: how this task interacts with other in-flight task items on the same node.
 
 Initial modes:
 
 - `PARALLEL`: does not block or get blocked by other task items.
 - `MUTEX_GROUP`: only one non-terminal task item in the same `concurrencyGroup` can be `PULLED` or `RUNNING` on the same node.
-- `EXCLUSIVE_NODE`: no other non-terminal task item, except `PARALLEL` chat tasks when explicitly allowed, can be `PULLED` or `RUNNING` on the same node.
+- `EXCLUSIVE_NODE`: no other non-terminal task item can be `PULLED` or `RUNNING` on the same node.
 
 Default examples:
 
-- `chat`: `group=chat`, `mode=PARALLEL`
 - `skill_install`: `group=skill-management`, `mode=MUTEX_GROUP`
 - `skill_upgrade`: `group=skill-management`, `mode=MUTEX_GROUP`
 - `skill_remove`: `group=skill-management`, `mode=MUTEX_GROUP`
@@ -837,9 +825,6 @@ clawmgt:
       defaults:
         lifecycle-mode: MUTEX_GROUP
       types:
-        chat:
-          group: chat
-          mode: PARALLEL
         skill_install:
           group: skill-management
           mode: MUTEX_GROUP
@@ -855,8 +840,6 @@ clawmgt:
 ```
 
 Configuration should be validated at startup. Unknown task types should fail fast. Missing lifecycle task configuration should fall back to the strategy default, and truly unknown future lifecycle task types should use a conservative `MUTEX_GROUP` default unless explicitly configured.
-
-Chat tasks and lifecycle tasks do not block each other by default because `chat` uses `PARALLEL`. If a future operation must block chat, configure it as `EXCLUSIVE_NODE` and disallow parallel chat for that operation in the concurrency checker.
 
 ## Error Handling
 
